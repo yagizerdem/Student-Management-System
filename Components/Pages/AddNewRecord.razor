@@ -1,0 +1,161 @@
+﻿@page "/newrecord"
+@inject NavigationManager navigationManger
+@inject ToastService toastService
+@using System.Data.SQLite
+<h3>AddNewRecord</h3>
+<EditForm Model="@Model" OnValidSubmit=@ValidFormSubmitted>
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+    <div>
+        <label>First name</label>
+        <input @bind-value="Model.FirstName" />
+    </div>
+
+    <div>
+        <label>Last name</label>
+        <input @bind-value="Model.LastName" />
+    </div>
+    <div>
+        <label>Gender</label>
+        <InputSelect @bind-Value="Model.Gender">
+            <option disabled selected value> -- select an option -- </option>
+            <option value="Male">Male</option>
+            <option value="Female"> Female</option>
+        </InputSelect>
+    </div>
+
+    <div>
+        <label>Image</label>
+        <InputFile type="file" OnChange="OnChange" />
+    </div>
+
+    <div>
+        <lable>Email</lable>
+        <input @bind-value="Model.Email" />
+    </div>
+    <div>
+        <lable>Date of birth</lable>
+        <InputDate TValue="DateOnly" @bind-Value="Model.DateOfBirth" Placeholder="Enter Date" />
+    </div>
+    <div>
+        <lable>GPA</lable>
+        <input type="number" @bind-value="Model.GPA" min="0" max="4" />
+    </div>
+
+
+    <button type="submit">submit</button>
+</EditForm>
+
+<style>
+    form {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+    }
+
+        form > div {
+            margin: 20px 0;
+        }
+</style>
+
+@code {
+
+    [SupplyParameterFromForm]
+    public Student? Model { get; set; }
+
+    public AddNewRecord()
+    {
+        this.Model = new Student();
+    }
+    void ValidFormSubmitted()
+    {
+        try
+        {
+            if (!File.Exists(SD.dbPath))
+            {
+                File.Create(SD.dbPath);
+            }
+            // save data on db
+            using (SQLiteConnection connection = new SQLiteConnection(SD.connString))
+            {
+
+                string createTableQuery = @"
+CREATE TABLE IF NOT EXISTS Student (
+    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+    GPA REAL NOT NULL,
+    FirstName TEXT NOT NULL,
+    LastName TEXT NOT NULL,
+    Gender TEXT NOT NULL,
+    ImageFilebase64 TEXT,
+    Email TEXT NOT NULL UNIQUE,
+    DateOfBirth TEXT NOT NULL
+);
+            ";
+
+
+                connection.Open();
+
+                // Execute the command
+                using (SQLiteCommand command = new SQLiteCommand(createTableQuery, connection))
+                {
+                    command.ExecuteNonQuery();
+                }
+
+                string insertQuery = @"
+                INSERT INTO Student (GPA, FirstName, LastName, Gender, ImageFilebase64, Email, DateOfBirth)
+                VALUES (@GPA, @FirstName, @LastName, @Gender, @ImageFilebase64, @Email, @DateOfBirth);
+            ";
+
+                // Prepare the command
+                using (SQLiteCommand command = new SQLiteCommand(insertQuery, connection))
+                {
+                    // Add parameters to prevent SQL injection
+                    command.Parameters.AddWithValue("@GPA", this.Model.GPA);
+                    command.Parameters.AddWithValue("@FirstName", this.Model.FirstName);
+                    command.Parameters.AddWithValue("@LastName", this.Model.LastName);
+                    command.Parameters.AddWithValue("@Gender", this.Model.Gender);
+                    command.Parameters.AddWithValue("@ImageFilebase64", this.Model.ImageFilebase64 ?? (object)DBNull.Value);
+                    command.Parameters.AddWithValue("@Email", this.Model.Email);
+                    command.Parameters.AddWithValue("@DateOfBirth", this.Model.DateOfBirth.ToString("yyyy-MM-dd")); // Format as TEXT in ISO 8601
+
+                    // Execute the command
+                    command.ExecuteNonQuery();
+                }
+            }
+
+            navigationManger.NavigateTo("/");
+            toastService.ShowToast("stuedent record registered", ToastLevel.Success);
+        }
+        catch(Exception ex)
+        {
+            toastService.ShowToast(ex.Message, ToastLevel.Error);
+
+        }
+    }
+
+    public async void OnChange(InputFileChangeEventArgs args)
+    {
+        IBrowserFile file = args.File;
+        this.Model.ImageFilebase64 = await UploadMedia(file);
+    }
+
+    public async Task<string> UploadMedia(IBrowserFile file)
+    {
+        long maxFileSize = 1024 * 1024 * 5; // 5 MB or whatever, don't just use max int
+
+        var readStream = file.OpenReadStream(maxFileSize);
+
+        var buf = new byte[readStream.Length];
+
+        var ms = new MemoryStream(buf);
+
+        await readStream.CopyToAsync(ms);
+
+        var buffer = ms.ToArray();
+
+        return Convert.ToBase64String(buffer);
+    }
+
+
+}

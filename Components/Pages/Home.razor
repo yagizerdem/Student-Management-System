@@ -1,0 +1,242 @@
+﻿@page "/"
+@using System.Data.SQLite
+@inject ToastService toastService
+@inject NavigationManager navigationManager
+
+<PageTitle>Home</PageTitle>
+
+<h1>Student Records</h1>
+<button class="btn btn-primary" id="addNewStudent" @onclick="NewStudnet">Add New Student</button>
+<InputText placeholder="search for student" @bind-Value="this.FilterValue" @oninput="FilterByFullName" class="filterInput" />
+<select @onchange="Filter">
+    <option value="@Home.filterOptions.None" selected>-- None --</option>
+    <option value="@Home.filterOptions.GPA">GPA</option>
+    <option value="@Home.filterOptions.AGE">Age</option>
+    <option value="@Home.filterOptions.FULLNAME">FullName</option>
+</select>
+
+<div>
+    <table class="table">
+        <thead>
+            <tr>
+                <th scope="col">Id</th>
+                <th scope="col">First Name</th>
+                <th scope="col">Last Name</th>
+                <th scope="col">Full Name</th>
+                           <th scope="col">Image</th>
+                <th scope="col">GPA</th>
+                <th scope="col">Gender</th>
+                <th scope="col">BirthDate</th>
+                <th scope="col">Edit
+                </th>
+                <th scope="col">
+                    Delete
+                </th>
+            </tr>
+        </thead>
+        <tbody>
+            @{
+                foreach (Student record in this.studentsFromDbDeepCopy)
+                {
+
+                    <tr>
+                        <th scope="row">@record.Id</th>
+                        <td>@record.FirstName</td>
+                        <td>@record.LastName</td>
+                        <td>@record.FullNmae</td>
+                        <td>
+                            <img src="@($"data:image/png;base64,{record.ImageFilebase64}")" alt="Student Image" width="150" />
+                        </td>
+                        <td>@record.GPA</td>
+                        <td>@record.Gender</td>
+                        <td>@record.DateOfBirth.ToString()</td>
+                        <td>
+                            <button type="button" class="btn btn-warning" @onclick="()=>ToEdit(record.Id)">Edit</button>
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-danger" @onclick="()=>Delete(Convert.ToInt32(record.Id))">Delete</button>
+                        </td>
+                    </tr>
+
+                }
+            }
+
+
+        </tbody>
+    </table>
+</div>
+
+<style>
+    img{
+        border-radius:50%;
+        fill-style:cover;
+        width:100px !important;
+        height:100px !important;
+        background-size: contains;
+    }
+</style>
+
+@code {
+    public string SelectFilterOption = "";
+    public List<Student> studentsFromDb = new();
+    public List<Student> studentsFromDbDeepCopy = new();
+    public string FilterValue = "";
+
+    public enum filterOptions
+    {
+        None,
+        GPA,
+        FULLNAME,
+        AGE
+    }
+
+    async void NewStudnet()
+    {
+        // InvokeAsync is inherited, it syncs the call back to the render thread
+        navigationManager.NavigateTo("/newrecord");
+    }
+    protected override async Task OnInitializedAsync()
+    {
+        FetchData();
+    }
+
+    public void FilterByFullName(ChangeEventArgs e)
+    {
+        FilterValue = e.Value?.ToString() ?? string.Empty;
+        this.studentsFromDbDeepCopy = this.studentsFromDb.Where(x => x.FullNmae.Contains(this.FilterValue)).ToList();
+    }
+
+    public void Filter(ChangeEventArgs e)
+    {
+        filterOptions selectedOption = filterOptions.None;
+        if (Enum.TryParse(typeof(filterOptions), e.Value.ToString(), out var result))
+        {
+            selectedOption = (filterOptions)result;
+        }
+
+        if (selectedOption == Home.filterOptions.None)
+        {
+            this.studentsFromDbDeepCopy = this.studentsFromDb.Select(student => (Student)student.Clone()).ToList();
+        }
+        else if (selectedOption == Home.filterOptions.GPA)
+        {
+            this.studentsFromDbDeepCopy = this.studentsFromDb.Select(student => (Student)student.Clone()).OrderByDescending(x => x.GPA).ToList();
+        }
+        else if (selectedOption == Home.filterOptions.FULLNAME)
+        {
+            this.studentsFromDbDeepCopy = this.studentsFromDb.Select(student => (Student)student.Clone()).OrderByDescending(x => x.FullNmae).ToList();
+        }
+        else if (selectedOption == Home.filterOptions.AGE)
+        {
+            this.studentsFromDbDeepCopy = this.studentsFromDb.Select(student => (Student)student.Clone()).OrderByDescending(x => x.DateOfBirth).ToList();
+        }
+
+    }
+
+
+    public void Delete(int id)
+    {
+        using (SQLiteConnection sqlConn = new SQLiteConnection(SD.connString))
+        {
+            sqlConn.Open();
+
+            // Create the SQL command using a parameter
+            string sql = "DELETE FROM Student WHERE ID = @id";
+
+            using (SQLiteCommand command = new SQLiteCommand(sql, sqlConn))
+            {
+                // Add the parameter and its value
+                command.Parameters.AddWithValue("@id", id);
+
+                // Execute the command
+                command.ExecuteNonQuery();
+            }
+        }
+
+        // Refresh or fetch data after deletion
+        FetchData();
+    }
+
+    private void FetchData()
+    {
+        this.studentsFromDb.Clear();
+        this.studentsFromDbDeepCopy.Clear();
+        using (SQLiteConnection connection = new SQLiteConnection(SD.connString))
+        {
+            try
+            {
+                connection.Open();
+                string query = "SELECT * FROM Student";
+                using var command = new SQLiteCommand(query, connection);
+                using var reader = command.ExecuteReader();
+
+                if (reader.HasRows)
+                {
+                    while (reader.Read())
+                    {
+                        var id = Convert.ToInt32(reader["Id"].ToString());
+                        var firstName = reader["FirstName"].ToString();
+                        var lastName = reader["LastName"].ToString();
+                        var Gender = reader["Gender"].ToString();
+                        var ImageBase64 = reader["ImageFilebase64"].ToString();
+                        var Email = reader["Email"].ToString();
+                        var DateOfBirth = reader["DateOfBirth"].ToString();
+                        var GPA = Convert.ToDouble(reader["GPA"].ToString());
+
+                        this.studentsFromDb.Add(new Student()
+                            {
+                                Id = id,
+                                FirstName = firstName,
+                                GPA = GPA,
+                                Gender = Gender,
+                                DateOfBirth = DateOnly.Parse(DateOfBirth),
+                                Email = Email,
+                                LastName = lastName,
+                                ImageFilebase64 = ImageBase64,
+                            });
+                    }
+                }
+
+                this.studentsFromDbDeepCopy = this.studentsFromDb.Select(student => (Student)student.Clone()).ToList();
+            }
+            catch (Exception ex)
+            {
+                toastService.ShowToast(ex.Message, ToastLevel.Error);
+            }
+
+        }
+    }
+
+    public void ToEdit(int recordId)
+    {
+        navigationManager.NavigateTo($"/Edit/{recordId}");
+    }
+}
+
+<style>
+    h1 {
+        display: inline
+    }
+
+    #addNewStudent {
+        float: right;
+    }
+
+    .filterInput {
+        display: block;
+        position: relative;
+        width: 300px;
+        left: calc(100% - 300px);
+        border: none;
+        outline: none;
+        background: rgb(220,220,220);
+        padding: 5px 8px;
+        border-radius: 4px;
+        box-shadow: rgba(0, 0, 0, 0.25) 0px 54px 55px, rgba(0, 0, 0, 0.12) 0px -12px 30px, rgba(0, 0, 0, 0.12) 0px 4px 6px, rgba(0, 0, 0, 0.17) 0px 12px 13px, rgba(0, 0, 0, 0.09) 0px -3px 5px;
+    }
+
+        .filterInput:focus {
+            border: none;
+            outline: none;
+        }
+</style>
